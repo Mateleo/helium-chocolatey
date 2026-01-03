@@ -10,6 +10,7 @@
     <projectUrl>https://github.com/imputnet/helium</projectUrl>
     <licenseUrl>https://github.com/imputnet/helium/blob/master/LICENSE</licenseUrl>
     <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <packageSourceUrl>https://github.com/Mateleo/helium-chocolatey</packageSourceUrl>
     <projectSourceUrl>https://github.com/imputnet/helium</projectSourceUrl>
     <bugTrackerUrl>https://github.com/imputnet/helium/issues</bugTrackerUrl>
     <tags>helium browser chromium ungoogled-chromium privacy web</tags>
