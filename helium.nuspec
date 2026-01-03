@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd">
+  <metadata>
+    <id>helium</id>
+    <version>0.7.7.1</version>
+    <owners>Mateleo</owners>
+    <title>Helium Browser</title>
+    <iconUrl>https://cdn.statically.io/gh/imputnet/helium@main/resources/branding/app_icon/raw.png</iconUrl>
+    <authors>imputnet</authors>
+    <projectUrl>https://github.com/imputnet/helium</projectUrl>
+    <licenseUrl>https://github.com/imputnet/helium/blob/master/LICENSE</licenseUrl>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <projectSourceUrl>https://github.com/imputnet/helium</projectSourceUrl>
+    <bugTrackerUrl>https://github.com/imputnet/helium/issues</bugTrackerUrl>
+    <tags>helium browser chromium ungoogled-chromium privacy web</tags>
+    <summary>Helium is a browser based on ungoogled-chromium.</summary>
+    <description>Best privacy and unbiased ad-blocking by default. Handy features like native !bangs and split view. No adware, no bloat, no noise. Made for people, by people. Fully open source. This package installs the Windows build of Helium.</description>
+    <releaseNotes>https://github.com/imputnet/helium/releases</releaseNotes>
+    </metadata>
+  <files>
+    <file src="tools\**" target="tools" />
+  </files>
+</package>
