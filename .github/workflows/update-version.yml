@@ -59,6 +59,7 @@ jobs:
         run: |
           new_checksum=$(sha256sum installer.exe | cut -d' ' -f1)
           echo "new_checksum=$new_checksum" >> $GITHUB_OUTPUT
+          rm installer.exe
 
       - name: Update version in chocolateyinstall.ps1
         if: steps.check_update.outputs.update_needed == 'true'
