@@ -19,7 +19,7 @@ $packageArgs = @{
   checksum      = ''
   checksumType  = 'sha256'
 
-  checksum64    = '3AFF957788E9189CC04EBD3CE3A2E5473A3185935117E0FA130DFFB369A15F0E'
+  checksum64    = 'f18d29d20e2db85788c73366d7c2323cdfda791065bfeda5edb230c566db8172'
   checksumType64= 'sha256'
 
   silentArgs    = '--do-not-launch-chrome' 
