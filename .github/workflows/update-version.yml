@@ -1,0 +1,93 @@
+name: Update Helium Version
+
+on:
+  schedule:
+    - cron: "0 0 * * *" # Run daily at midnight UTC
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  update-version:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Get latest release from imputnet/helium-windows
+        id: get_release
+        run: |
+          latest_release=$(curl -s https://api.github.com/repos/imputnet/helium-windows/releases/latest)
+          # Use raw tag_name, removing 'v' only if it exists
+          new_version=$(echo "$latest_release" | jq -r '.tag_name' | sed 's/^v//')
+          echo "New version: $new_version"
+          echo "new_version=$new_version" >> $GITHUB_OUTPUT
+
+      - name: Get current version
+        id: get_current
+        # FIX: Case sensitive path (Install.ps1).
+        # FIX: Regex matches '$version = ' with any amount of whitespace
+        run: |
+          current_version=$(grep -P "\$version\s*=\s*" tools/chocolateyInstall.ps1 | cut -d"'" -f2)
+          echo "Current version: $current_version"
+          echo "current_version=$current_version" >> $GITHUB_OUTPUT
+
+      - name: Check if update needed
+        id: check_update
+        run: |
+          if [ "${{ steps.get_current.outputs.current_version }}" != "${{ steps.get_release.outputs.new_version }}" ]; then
+            echo "update_needed=true" >> $GITHUB_OUTPUT
+          else
+            echo "Already up to date"
+            echo "update_needed=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Download new installer for checksum
+        if: steps.check_update.outputs.update_needed == 'true'
+        run: |
+          new_version="${{ steps.get_release.outputs.new_version }}"
+          # URL pattern matches the structure seen in your screenshot
+          url="https://github.com/imputnet/helium-windows/releases/download/$new_version/Helium_${new_version}_x64-installer.exe"
+          curl -L -o installer.exe "$url"
+
+      - name: Compute checksum
+        if: steps.check_update.outputs.update_needed == 'true'
+        id: get_checksum
+        run: |
+          new_checksum=$(sha256sum installer.exe | cut -d' ' -f1)
+          echo "new_checksum=$new_checksum" >> $GITHUB_OUTPUT
+
+      - name: Update version in chocolateyInstall.ps1
+        if: steps.check_update.outputs.update_needed == 'true'
+        run: |
+          current="${{ steps.get_current.outputs.current_version }}"
+          new="${{ steps.get_release.outputs.new_version }}"
+          new_checksum="${{ steps.get_checksum.outputs.new_checksum }}"
+
+          # FIX: Case sensitive filename
+          # FIX: Used regex to allow flexible spacing around the '=' sign
+          sed -i "s/\$version\s*=\s*'$current'/\$version    = '$new'/" tools/chocolateyInstall.ps1
+          sed -i "s/checksum64\s*=\s*'[^']*'/checksum64    = '$new_checksum'/" tools/chocolateyInstall.ps1
+
+      - name: Update version in helium.nuspec
+        if: steps.check_update.outputs.update_needed == 'true'
+        run: |
+          current="${{ steps.get_current.outputs.current_version }}"
+          new="${{ steps.get_release.outputs.new_version }}"
+          # This assumes the version is wrapped in standard xml tags
+          sed -i "s/<version>$current<\/version>/<version>$new<\/version>/" helium.nuspec
+
+      - name: Create pull request
+        if: steps.check_update.outputs.update_needed == 'true'
+        uses: peter-evans/create-pull-request@v8
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: update-version-${{ steps.get_release.outputs.new_version }}
+          delete-branch: true
+          title: "Update Helium version to ${{ steps.get_release.outputs.new_version }}"
+          body: |
+            Automatically updated Helium version from ${{ steps.get_current.outputs.current_version }} to ${{ steps.get_release.outputs.new_version }}
+
+            Changes:
+            - Updated version in tools/chocolateyInstall.ps1
+            - Updated checksum64 in tools/chocolateyInstall.ps1
+            - Updated version in helium.nuspec
