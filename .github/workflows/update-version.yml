@@ -68,18 +68,26 @@ jobs:
           new="${{ steps.get_release.outputs.new_version }}"
           new_checksum="${{ steps.get_checksum.outputs.new_checksum }}"
 
-          # FIX: Case sensitive filename
-          # FIX: Used regex to allow flexible spacing around the '=' sign
-          sed -i "s/\$version\s*=\s*'$current'/\$version    = '$new'/" tools/chocolateyinstall.ps1
-          sed -i "s/checksum64\s*=\s*'[^']*'/checksum64    = '$new_checksum'/" tools/chocolateyinstall.ps1
+          # Escape dots in version strings for regex
+          current_escaped=$(echo "$current" | sed 's/\./\\./g')
+
+          # Update $version variable (use [[:space:]]* for POSIX compatibility)
+          sed -i "s/\$version[[:space:]]*=[[:space:]]*'$current_escaped'/\$version    = '$new'/" tools/chocolateyinstall.ps1
+
+          # Update checksum64
+          sed -i "s/checksum64[[:space:]]*=[[:space:]]*'[^']*'/checksum64    = '$new_checksum'/" tools/chocolateyinstall.ps1
 
       - name: Update version in helium.nuspec
         if: steps.check_update.outputs.update_needed == 'true'
         run: |
           current="${{ steps.get_current.outputs.current_version }}"
           new="${{ steps.get_release.outputs.new_version }}"
-          # This assumes the version is wrapped in standard xml tags
-          sed -i "s/<version>$current<\/version>/<version>$new<\/version>/" helium.nuspec
+
+          # Escape dots in version string for regex
+          current_escaped=$(echo "$current" | sed 's/\./\\./g')
+
+          # Update version in nuspec file
+          sed -i "s/<version>$current_escaped<\/version>/<version>$new<\/version>/" helium.nuspec
 
       - name: Create pull request
         if: steps.check_update.outputs.update_needed == 'true'
