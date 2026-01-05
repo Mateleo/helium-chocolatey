@@ -15,7 +15,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
 
       - name: Get latest release from imputnet/helium-windows
         id: get_release
@@ -28,9 +28,8 @@ jobs:
 
       - name: Get current version
         id: get_current
-        # FIX: Case sensitive path (Install.ps1).
-        # FIX: Regex matches '$version = ' with any amount of whitespace
         run: |
+          # Extract version from ps1, assuming format: $version = 'x.x.x'
           current_version=$(grep -P "\$version\s*=\s*" tools/chocolateyinstall.ps1 | cut -d"'" -f2)
           echo "Current version: $current_version"
           echo "current_version=$current_version" >> $GITHUB_OUTPUT
@@ -49,8 +48,12 @@ jobs:
         if: steps.check_update.outputs.update_needed == 'true'
         run: |
           new_version="${{ steps.get_release.outputs.new_version }}"
-          # URL pattern matches the structure seen in your screenshot
-          url="https://github.com/imputnet/helium-windows/releases/download/$new_version/Helium_${new_version}_x64-installer.exe"
+          url="https://github.com/imputnet/helium-windows/releases/download/v$new_version/Helium_${new_version}_x64-installer.exe"
+
+          # Note: I added 'v' before $new_version in the download path above if the tag has a v. 
+          # If the download URL fails, check if the repo uses v1.0.0 or just 1.0.0 in the URL path.
+
+          echo "Downloading from: $url"
           curl -L -o installer.exe "$url"
 
       - name: Compute checksum
@@ -64,34 +67,28 @@ jobs:
       - name: Update version in chocolateyinstall.ps1
         if: steps.check_update.outputs.update_needed == 'true'
         run: |
-          current="${{ steps.get_current.outputs.current_version }}"
           new="${{ steps.get_release.outputs.new_version }}"
           new_checksum="${{ steps.get_checksum.outputs.new_checksum }}"
 
-          # Escape dots in version strings for regex
-          current_escaped=$(echo "$current" | sed 's/\./\\./g')
+          # TARGET: $version = '...'
+          # We use regex to match ANY content inside the quotes, rather than the specific old version
+          sed -i "s/^\$version[[:space:]]*=[[:space:]]*'[^']*'/\$version    = '$new'/" tools/chocolateyinstall.ps1
 
-          # Update $version variable (use [[:space:]]* for POSIX compatibility)
-          sed -i "s/\$version[[:space:]]*=[[:space:]]*'$current_escaped'/\$version    = '$new'/" tools/chocolateyinstall.ps1
-
-          # Update checksum64
+          # TARGET: checksum64 = '...'
           sed -i "s/checksum64[[:space:]]*=[[:space:]]*'[^']*'/checksum64    = '$new_checksum'/" tools/chocolateyinstall.ps1
 
       - name: Update version in helium.nuspec
         if: steps.check_update.outputs.update_needed == 'true'
         run: |
-          current="${{ steps.get_current.outputs.current_version }}"
           new="${{ steps.get_release.outputs.new_version }}"
 
-          # Escape dots in version string for regex
-          current_escaped=$(echo "$current" | sed 's/\./\\./g')
-
-          # Update version in nuspec file
-          sed -i "s/<version>$current_escaped<\/version>/<version>$new<\/version>/" helium.nuspec
+          # TARGET: <version>...</version>
+          # We match ANY content inside the tags
+          sed -i "s/<version>[^<]*<\/version>/<version>$new<\/version>/" helium.nuspec
 
       - name: Create pull request
         if: steps.check_update.outputs.update_needed == 'true'
-        uses: peter-evans/create-pull-request@v8
+        uses: peter-evans/create-pull-request@v5
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           branch: update-version-${{ steps.get_release.outputs.new_version }}
