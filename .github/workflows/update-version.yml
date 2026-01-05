@@ -48,10 +48,7 @@ jobs:
         if: steps.check_update.outputs.update_needed == 'true'
         run: |
           new_version="${{ steps.get_release.outputs.new_version }}"
-          url="https://github.com/imputnet/helium-windows/releases/download/v$new_version/Helium_${new_version}_x64-installer.exe"
-
-          # Note: I added 'v' before $new_version in the download path above if the tag has a v. 
-          # If the download URL fails, check if the repo uses v1.0.0 or just 1.0.0 in the URL path.
+          url="https://github.com/imputnet/helium-windows/releases/download/$new_version/Helium_${new_version}_x64-installer.exe"
 
           echo "Downloading from: $url"
           curl -L -o installer.exe "$url"
