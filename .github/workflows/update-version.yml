@@ -27,7 +27,7 @@ jobs:
         # FIX: Case sensitive path (Install.ps1).
         # FIX: Regex matches '$version = ' with any amount of whitespace
         run: |
-          current_version=$(grep -P "\$version\s*=\s*" tools/chocolateyInstall.ps1 | cut -d"'" -f2)
+          current_version=$(grep -P "\$version\s*=\s*" tools/chocolateyinstall.ps1 | cut -d"'" -f2)
           echo "Current version: $current_version"
           echo "current_version=$current_version" >> $GITHUB_OUTPUT
 
@@ -56,7 +56,7 @@ jobs:
           new_checksum=$(sha256sum installer.exe | cut -d' ' -f1)
           echo "new_checksum=$new_checksum" >> $GITHUB_OUTPUT
 
-      - name: Update version in chocolateyInstall.ps1
+      - name: Update version in chocolateyinstall.ps1
         if: steps.check_update.outputs.update_needed == 'true'
         run: |
           current="${{ steps.get_current.outputs.current_version }}"
@@ -65,8 +65,8 @@ jobs:
 
           # FIX: Case sensitive filename
           # FIX: Used regex to allow flexible spacing around the '=' sign
-          sed -i "s/\$version\s*=\s*'$current'/\$version    = '$new'/" tools/chocolateyInstall.ps1
-          sed -i "s/checksum64\s*=\s*'[^']*'/checksum64    = '$new_checksum'/" tools/chocolateyInstall.ps1
+          sed -i "s/\$version\s*=\s*'$current'/\$version    = '$new'/" tools/chocolateyinstall.ps1
+          sed -i "s/checksum64\s*=\s*'[^']*'/checksum64    = '$new_checksum'/" tools/chocolateyinstall.ps1
 
       - name: Update version in helium.nuspec
         if: steps.check_update.outputs.update_needed == 'true'
@@ -88,6 +88,6 @@ jobs:
             Automatically updated Helium version from ${{ steps.get_current.outputs.current_version }} to ${{ steps.get_release.outputs.new_version }}
 
             Changes:
-            - Updated version in tools/chocolateyInstall.ps1
-            - Updated checksum64 in tools/chocolateyInstall.ps1
+            - Updated version in tools/chocolateyinstall.ps1
+            - Updated checksum64 in tools/chocolateyinstall.ps1
             - Updated version in helium.nuspec
