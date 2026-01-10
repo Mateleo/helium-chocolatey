@@ -2,7 +2,7 @@
 <package xmlns="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd">
   <metadata>
     <id>helium</id>
-    <version>0.7.9.1</version>
+    <version>0.7.10.1</version>
     <owners>Mateleo</owners>
     <title>Helium Browser</title>
     <iconUrl>https://cdn.statically.io/gh/imputnet/helium@main/resources/branding/app_icon/raw.png</iconUrl>
