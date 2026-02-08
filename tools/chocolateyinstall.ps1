@@ -1,7 +1,7 @@
 ﻿$ErrorActionPreference = 'Stop'
 $toolsDir   = "$(Split-Path -parent $MyInvocation.MyCommand.Definition)"
 
-$version    = '0.8.4.1'
+$version    = '0.8.5.1'
 
 $url64      = "https://github.com/imputnet/helium-windows/releases/download/$version/Helium_$($version)_x64-installer.exe"
 
@@ -19,7 +19,7 @@ $packageArgs = @{
   checksum      = ''
   checksumType  = 'sha256'
 
-  checksum64    = 'abaff09addcc2d71f7ea4063ff5a25c52dffcb5801cb17c75cef9501af8dc830'
+  checksum64    = '47b8df675e9058d852defa809d16e22e842dff004d790c34e7ef821b501c015e'
   checksumType64= 'sha256'
 
   silentArgs    = '--do-not-launch-chrome' 
