@@ -6,7 +6,8 @@ $packageArgs = @{
   packageName   = $packageName
   softwareName  = $softwareName
   fileType      = 'EXE'
-  silentArgs    = '--uninstall --force-uninstall' 
+  # NSIS uninstaller uses /S for silent uninstall
+  silentArgs    = '/S' 
   validExitCodes= @(0, 19)
 }
 

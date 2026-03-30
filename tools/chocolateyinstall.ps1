@@ -22,7 +22,10 @@ $packageArgs = @{
   checksum64    = 'cdd1682bfc8f0d0d51330063ddab71990ac7e2c64a42a78f421e21cb65ed9161'
   checksumType64= 'sha256'
 
-  silentArgs    = '--do-not-launch-chrome' 
+  # NSIS installer flags:
+  # /S - Silent/Headless installation
+  # /do-not-launch-chrome - Always passed to setup.exe backend
+  silentArgs    = '/S /do-not-launch-chrome' 
   validExitCodes= @(0)
 }
 
