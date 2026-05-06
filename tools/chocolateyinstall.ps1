@@ -1,7 +1,7 @@
 ﻿$ErrorActionPreference = 'Stop'
 $toolsDir   = "$(Split-Path -parent $MyInvocation.MyCommand.Definition)"
 
-$version    = '0.11.6.1'
+$version    = '0.12.1.1'
 
 $url64      = "https://github.com/imputnet/helium-windows/releases/download/$version/Helium_$($version)_x64-installer.exe"
 
@@ -19,7 +19,7 @@ $packageArgs = @{
   checksum      = ''
   checksumType  = 'sha256'
 
-  checksum64    = '504044a2fd2bda21b84baf4dbe232ec40c07bda93eb949356b70fff874d9dd6a'
+  checksum64    = '915a2244dc2d38ac32aa1b6ecbfd242514efb047934646d2901cdd15721f2ac7'
   checksumType64= 'sha256'
 
   # NSIS installer flags:
