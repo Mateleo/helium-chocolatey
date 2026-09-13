@@ -68,7 +68,9 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $version = '${{ steps.pkg.outputs.version }}'
-          choco install helium --version=$version --source=(Resolve-Path out) --yes --no-progress
+          $source = (Resolve-Path out).Path
+          choco install helium --version=$version --source="$source" --yes --no-progress --allow-unofficial
+          if ($LASTEXITCODE -ne 0) { throw "choco install exited with $LASTEXITCODE" }
           $roots = @("$env:LOCALAPPDATA\imput\Helium", "$env:ProgramFiles\Helium") |
             Where-Object { Test-Path $_ }
           $exe = Get-ChildItem -Path $roots -Recurse -Filter 'helium.exe' -ErrorAction SilentlyContinue |
