@@ -71,12 +71,19 @@ jobs:
           $source = (Resolve-Path out).Path
           choco install helium --version=$version --source="$source" --yes --no-progress --allow-unofficial
           if ($LASTEXITCODE -ne 0) { throw "choco install exited with $LASTEXITCODE" }
+
           $roots = @("$env:LOCALAPPDATA\imput\Helium", "$env:ProgramFiles\Helium") |
             Where-Object { Test-Path $_ }
-          $exe = Get-ChildItem -Path $roots -Recurse -Filter 'helium.exe' -ErrorAction SilentlyContinue |
-            Select-Object -First 1
-          if (-not $exe) { throw "smoke test failed: helium.exe not found under $($roots -join ', ')" }
-          Write-Host "Smoke test passed: $($exe.FullName)"
+          if (-not $roots) { throw "smoke test failed: no Helium install directory was created" }
+
+          # what did we actually get on disk?
+          Get-ChildItem -Path $roots -Recurse -Depth 1 -ErrorAction SilentlyContinue |
+            Select-Object -First 30 | ForEach-Object { Write-Host "  $($_.FullName)" }
+
+          $exe = Get-ChildItem -Path $roots -Recurse -ErrorAction SilentlyContinue -Include 'helium.exe', 'chrome.exe' |
+            Sort-Object Length -Descending | Select-Object -First 1
+          if (-not $exe) { throw "smoke test failed: no browser executable found under $($roots -join ', ')" }
+          Write-Host "Smoke test passed: $($exe.FullName) ($([math]::Round($exe.Length / 1MB)) MB)"
 
       - name: Push to community.chocolatey.org
         shell: pwsh
