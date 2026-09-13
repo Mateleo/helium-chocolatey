@@ -119,7 +119,7 @@ jobs:
           try {
             $response = Invoke-WebRequest -Uri $feed -UseBasicParsing -TimeoutSec 60
             if ($response.Content -match "<entry") {
-              Write-Host "helium $version is already published - nothing to do."
+              Write-Host "helium $version is already on the community repository (published, or still awaiting moderation) - nothing to do."
               exit 0
             }
           } catch {
