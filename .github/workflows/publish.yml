@@ -35,6 +35,8 @@ jobs:
 
       - name: Verify the upstream installer URL and its checksum
         shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           $ErrorActionPreference = 'Stop'
           $version = '${{ steps.pkg.outputs.version }}'
@@ -42,13 +44,23 @@ jobs:
           $expected = [regex]::Match($installer, "checksum64\s*=\s*'([0-9a-fA-F]{64})'").Groups[1].Value.ToLower()
           if ($expected -notmatch '^[0-9a-f]{64}$') { throw "no valid checksum64 found in tools/chocolateyinstall.ps1" }
 
-          $url = "https://github.com/imputnet/helium-windows/releases/download/$version/Helium_${version}_x64-installer.exe"
+          # Resolve the asset from the release itself instead of guessing its exact name/casing.
+          $release = gh api "repos/imputnet/helium-windows/releases/tags/$version" | ConvertFrom-Json
+          $asset = $release.assets |
+            Where-Object { $_.name -like '*x64-installer.exe' -and $_.name -notlike '*mini*' } |
+            Select-Object -First 1
+          if (-not $asset) { throw "no x64 installer asset on the $version release" }
+
+          $url = $asset.browser_download_url
           Write-Host "Downloading $url"
           $file = Join-Path $env:RUNNER_TEMP 'installer.exe'
           Invoke-WebRequest -Uri $url -OutFile $file -UseBasicParsing
           $actual = (Get-FileHash -Path $file -Algorithm SHA256).Hash.ToLower()
           if ($actual -ne $expected) {
             throw "checksum mismatch for $version : package says $expected, upstream file hashes to $actual"
+          }
+          if ($asset.digest -and $asset.digest -ne "sha256:$actual") {
+            throw "checksum mismatch against GitHub's own digest for $($asset.name): $($asset.digest)"
           }
           Write-Host "Upstream installer verified ($actual)"
 
@@ -99,6 +111,8 @@ jobs:
           }
 
           # Idempotence: never try to push a version that is already on the community feed.
+          # NOTE: versions still in the moderation queue do not appear in the feed, so a
+          # re-push of a queued version is expected - the duplicate error below is tolerated.
           $filter = "Id eq 'helium' and Version eq '$version'"
           $feed = "https://community.chocolatey.org/api/v2/Packages()?" + '$filter=' +
             [uri]::EscapeDataString($filter) + '&$select=Version&$top=1'
@@ -112,5 +126,14 @@ jobs:
             Write-Warning "could not query the community feed ($_), pushing anyway"
           }
 
-          choco push '${{ steps.pack.outputs.nupkg }}' --source https://push.chocolatey.org/ --api-key $env:CHOCO_API_KEY --no-progress
+          $pushOutput = & choco push '${{ steps.pack.outputs.nupkg }}' --source https://push.chocolatey.org/ --api-key $env:CHOCO_API_KEY --no-progress 2>&1
+          $pushCode = $LASTEXITCODE
+          $pushOutput | ForEach-Object { Write-Host $_ }
+          if ($pushCode -ne 0) {
+            if ($pushOutput -match 'already exists|Conflict|409') {
+              Write-Host "helium $version already exists on the repository (most likely still in the moderation queue) - treating this as success."
+              exit 0
+            }
+            throw "choco push failed with exit code $pushCode"
+          }
           Write-Host "Pushed helium $version to the Chocolatey community repository."

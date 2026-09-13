@@ -2,7 +2,7 @@ name: Update Helium Version
 
 on:
   schedule:
-    - cron: "0 */2 * * *" # every 2 hours
+    - cron: "0 6,18 * * *" # every 12 hours (08:00 / 20:00 CEST)
   workflow_dispatch: # allow manual trigger
 
 permissions:
