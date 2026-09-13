@@ -2,99 +2,137 @@ name: Update Helium Version
 
 on:
   schedule:
-    - cron: "0 */2 * * *" # Run daily at midnight UTC
-  workflow_dispatch: # Allow manual trigger
+    - cron: "0 */2 * * *" # every 2 hours
+  workflow_dispatch: # allow manual trigger
 
 permissions:
-  contents: write # Required to push the new branch
-  pull-requests: write # Required to create the PR
+  contents: write # required to push the version bump to master
+
+concurrency:
+  group: update-version
+  cancel-in-progress: false
 
 jobs:
-  update-version:
+  update:
     runs-on: ubuntu-latest
-
+    outputs:
+      changed: ${{ steps.commit.outputs.changed }}
+      version: ${{ steps.release.outputs.version }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 0
 
       - name: Get latest release from imputnet/helium-windows
-        id: get_release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          latest_release=$(curl -s https://api.github.com/repos/imputnet/helium-windows/releases/latest)
-          # Use raw tag_name, removing 'v' only if it exists
-          new_version=$(echo "$latest_release" | jq -r '.tag_name' | sed 's/^v//')
-          echo "New version: $new_version"
-          echo "new_version=$new_version" >> $GITHUB_OUTPUT
+          set -euo pipefail
+
+          release=$(gh api repos/imputnet/helium-windows/releases/latest)
+          new_version=$(jq -r '.tag_name // empty' <<<"$release" | sed 's/^v//')
+
+          if [ -z "$new_version" ] || [ "$new_version" = "null" ]; then
+            echo "::error::could not read the latest upstream release tag"
+            exit 1
+          fi
+
+          asset="helium_${new_version}_x64-installer.exe"
+
+          # GitHub publishes a sha256 digest for every release asset; use it when available,
+          # otherwise download the installer and hash it ourselves.
+          new_checksum=$(jq -r --arg asset "$asset" '.assets[] | select(.name == $asset) | .digest // empty' <<<"$release")
+          new_checksum=${new_checksum#sha256:}
+
+          if [[ ! "$new_checksum" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "No usable digest for $asset, downloading the installer to hash it..."
+            url="https://github.com/imputnet/helium-windows/releases/download/${new_version}/${asset}"
+            curl -fsSL -o "$RUNNER_TEMP/installer.exe" "$url"
+            new_checksum=$(sha256sum "$RUNNER_TEMP/installer.exe" | cut -d' ' -f1)
+            rm -f "$RUNNER_TEMP/installer.exe"
+          fi
+
+          if [[ ! "$new_checksum" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "::error::could not determine the sha256 checksum of $asset"
+            exit 1
+          fi
+
+          echo "Latest upstream version: $new_version ($new_checksum)"
+          echo "version=$new_version" >> "$GITHUB_OUTPUT"
+          echo "checksum=$new_checksum" >> "$GITHUB_OUTPUT"
 
       - name: Get current version
         id: get_current
         run: |
-          # Extract version from ps1, assuming format: $version = 'x.x.x'
-          current_version=$(grep -P "\$version\s*=\s*" tools/chocolateyinstall.ps1 | cut -d"'" -f2)
-          echo "Current version: $current_version"
-          echo "current_version=$current_version" >> $GITHUB_OUTPUT
+          set -euo pipefail
+          # the nuspec is the source of truth, the install script must agree with it
+          nuspec_version=$(sed -n 's:.*<version>\([^<]*\)</version>.*:\1:p' helium.nuspec | head -1)
+          script_version=$(grep -oP "version\s*=\s*'\K[^']+" tools/chocolateyinstall.ps1 | head -1)
+
+          if [ -z "$nuspec_version" ] || [ -z "$script_version" ]; then
+            echo "::error::could not read the current version (nuspec='$nuspec_version', chocolateyinstall.ps1='$script_version')"
+            exit 1
+          fi
+          if [ "$nuspec_version" != "$script_version" ]; then
+            echo "::error::version mismatch: helium.nuspec=$nuspec_version tools/chocolateyinstall.ps1=$script_version"
+            exit 1
+          fi
+
+          echo "Current version: $script_version"
+          echo "current_version=$script_version" >> "$GITHUB_OUTPUT"
 
       - name: Check if update needed
         id: check_update
         run: |
-          if [ "${{ steps.get_current.outputs.current_version }}" != "${{ steps.get_release.outputs.new_version }}" ]; then
-            echo "update_needed=true" >> $GITHUB_OUTPUT
+          if [ "${{ steps.get_current.outputs.current_version }}" != "${{ steps.release.outputs.version }}" ]; then
+            echo "Update needed"
+            echo "update_needed=true" >> "$GITHUB_OUTPUT"
           else
             echo "Already up to date"
-            echo "update_needed=false" >> $GITHUB_OUTPUT
+            echo "update_needed=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Download new installer for checksum
+      - name: Update package files
         if: steps.check_update.outputs.update_needed == 'true'
         run: |
-          new_version="${{ steps.get_release.outputs.new_version }}"
-          url="https://github.com/imputnet/helium-windows/releases/download/$new_version/Helium_${new_version}_x64-installer.exe"
+          set -euo pipefail
+          new="${{ steps.release.outputs.version }}"
+          new_checksum="${{ steps.release.outputs.checksum }}"
 
-          echo "Downloading from: $url"
-          curl -L -o installer.exe "$url"
-
-      - name: Compute checksum
-        if: steps.check_update.outputs.update_needed == 'true'
-        id: get_checksum
-        run: |
-          new_checksum=$(sha256sum installer.exe | cut -d' ' -f1)
-          echo "new_checksum=$new_checksum" >> $GITHUB_OUTPUT
-          rm installer.exe
-
-      - name: Update version in chocolateyinstall.ps1
-        if: steps.check_update.outputs.update_needed == 'true'
-        run: |
-          new="${{ steps.get_release.outputs.new_version }}"
-          new_checksum="${{ steps.get_checksum.outputs.new_checksum }}"
-
-          # TARGET: $version = '...'
-          # We use regex to match ANY content inside the quotes, rather than the specific old version
+          # $version    = '<anything>'
           sed -i "s/^\$version[[:space:]]*=[[:space:]]*'[^']*'/\$version    = '$new'/" tools/chocolateyinstall.ps1
-
-          # TARGET: checksum64 = '...'
+          # checksum64    = '<anything>'
           sed -i "s/checksum64[[:space:]]*=[[:space:]]*'[^']*'/checksum64    = '$new_checksum'/" tools/chocolateyinstall.ps1
+          # <version>...</version>
+          sed -i "s|<version>[^<]*</version>|<version>$new</version>|" helium.nuspec
 
-      - name: Update version in helium.nuspec
-        if: steps.check_update.outputs.update_needed == 'true'
+          git --no-pager diff --stat
+
+      - name: Commit and push to master
+        id: commit
         run: |
-          new="${{ steps.get_release.outputs.new_version }}"
+          set -euo pipefail
 
-          # TARGET: <version>...</version>
-          # We match ANY content inside the tags
-          sed -i "s/<version>[^<]*<\/version>/<version>$new<\/version>/" helium.nuspec
+          if git diff --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
 
-      - name: Create pull request
-        if: steps.check_update.outputs.update_needed == 'true'
-        uses: peter-evans/create-pull-request@v5
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          branch: update-version-${{ steps.get_release.outputs.new_version }}
-          delete-branch: true
-          title: "Update Helium version to ${{ steps.get_release.outputs.new_version }}"
-          body: |
-            Automatically updated Helium version from ${{ steps.get_current.outputs.current_version }} to ${{ steps.get_release.outputs.new_version }}
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add helium.nuspec tools/chocolateyinstall.ps1
+          git commit -m "Update Helium version to ${{ steps.release.outputs.version }}"
+          git push origin HEAD:master
 
-            Changes:
-            - Updated version in tools/chocolateyinstall.ps1
-            - Updated checksum64 in tools/chocolateyinstall.ps1
-            - Updated version in helium.nuspec
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+  # Pushes made with the default GITHUB_TOKEN do not trigger other workflows, so the publish
+  # workflow is called explicitly instead of relying on the push event above.
+  publish:
+    needs: update
+    if: needs.update.outputs.changed == 'true' || github.event_name == 'workflow_dispatch'
+    uses: ./.github/workflows/publish.yml
+    secrets: inherit

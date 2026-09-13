@@ -1,0 +1,107 @@
+name: Publish to Chocolatey
+
+on:
+  workflow_call:
+  workflow_dispatch:
+  push:
+    branches: [master]
+    paths:
+      - helium.nuspec
+      - tools/**
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: master
+
+      - name: Read the version from the nuspec
+        id: pkg
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          [xml]$nuspec = Get-Content -Raw helium.nuspec
+          $version = $nuspec.package.metadata.version
+          if ([string]::IsNullOrWhiteSpace($version)) { throw "no <version> in helium.nuspec" }
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "version=$version"
+
+      - name: Verify the upstream installer URL and its checksum
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = '${{ steps.pkg.outputs.version }}'
+          $installer = Get-Content -Raw tools/chocolateyinstall.ps1
+          $expected = [regex]::Match($installer, "checksum64\s*=\s*'([0-9a-fA-F]{64})'").Groups[1].Value.ToLower()
+          if ($expected -notmatch '^[0-9a-f]{64}$') { throw "no valid checksum64 found in tools/chocolateyinstall.ps1" }
+
+          $url = "https://github.com/imputnet/helium-windows/releases/download/$version/Helium_${version}_x64-installer.exe"
+          Write-Host "Downloading $url"
+          $file = Join-Path $env:RUNNER_TEMP 'installer.exe'
+          Invoke-WebRequest -Uri $url -OutFile $file -UseBasicParsing
+          $actual = (Get-FileHash -Path $file -Algorithm SHA256).Hash.ToLower()
+          if ($actual -ne $expected) {
+            throw "checksum mismatch for $version : package says $expected, upstream file hashes to $actual"
+          }
+          Write-Host "Upstream installer verified ($actual)"
+
+      - name: choco pack
+        id: pack
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          choco pack helium.nuspec --output-directory out
+          $nupkg = (Get-ChildItem out -Filter *.nupkg | Select-Object -First 1).FullName
+          if (-not $nupkg) { throw "choco pack produced no .nupkg" }
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "nupkg=$nupkg"
+          Write-Host "Packed $nupkg"
+
+      - name: Smoke test - install the packed package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = '${{ steps.pkg.outputs.version }}'
+          choco install helium --version=$version --source=(Resolve-Path out) --yes --no-progress
+          $roots = @("$env:LOCALAPPDATA\imput\Helium", "$env:ProgramFiles\Helium") |
+            Where-Object { Test-Path $_ }
+          $exe = Get-ChildItem -Path $roots -Recurse -Filter 'helium.exe' -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+          if (-not $exe) { throw "smoke test failed: helium.exe not found under $($roots -join ', ')" }
+          Write-Host "Smoke test passed: $($exe.FullName)"
+
+      - name: Push to community.chocolatey.org
+        shell: pwsh
+        env:
+          CHOCO_API_KEY: ${{ secrets.CHOCO_API_KEY }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = '${{ steps.pkg.outputs.version }}'
+
+          if ([string]::IsNullOrWhiteSpace($env:CHOCO_API_KEY)) {
+            Write-Warning "CHOCO_API_KEY is not set on this repository - skipping the push."
+            exit 0
+          }
+
+          # Idempotence: never try to push a version that is already on the community feed.
+          $filter = "Id eq 'helium' and Version eq '$version'"
+          $feed = "https://community.chocolatey.org/api/v2/Packages()?" + '$filter=' +
+            [uri]::EscapeDataString($filter) + '&$select=Version&$top=1'
+          try {
+            $response = Invoke-WebRequest -Uri $feed -UseBasicParsing -TimeoutSec 60
+            if ($response.Content -match "<entry") {
+              Write-Host "helium $version is already published - nothing to do."
+              exit 0
+            }
+          } catch {
+            Write-Warning "could not query the community feed ($_), pushing anyway"
+          }
+
+          choco push '${{ steps.pack.outputs.nupkg }}' --source https://push.chocolatey.org/ --api-key $env:CHOCO_API_KEY --no-progress
+          Write-Host "Pushed helium $version to the Chocolatey community repository."
